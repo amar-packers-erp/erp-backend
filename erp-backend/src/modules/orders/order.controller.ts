@@ -38,17 +38,28 @@ function flattenOrder(o: any) {
 }
 
 /**
- * When an order is completed, deduct raw materials from inventory.
- * 
- * Consumption logic:
+ * When a NON-PRINTED order is completed, deduct raw materials from inventory.
+ *
+ * Printed orders are deliberately skipped here: their stock moves at two other
+ * points instead — the source material is deducted when the order is sent to
+ * job work, and the finished printed item is deducted when the order is
+ * dispatched. Deducting raw materials on completion too would double-count.
+ *
+ * Consumption logic (non-printed orders only):
  * - Sheets consumed = quantityOrdered / boxesPerSheet
  * - Deducts from the first available Duplex inventory item
  * - If laminated, deducts lamination film sheets
  * - Deducts stitching wire (1 per box) and strapping (1 per 50 boxes)
- * 
+ *
  * Creates StockTransaction OUT records for audit trail.
  */
 async function deductInventoryOnCompletion(order: any) {
+  // Printed orders deduct at job work (source) and dispatch (finished good),
+  // so skip the raw-material category deduction for them.
+  if (order?.finishing?.printed) {
+    return [];
+  }
+
   const qty = order.orderInfo?.quantityOrdered || 0;
   const boxesPerSheet = order.boxSpecification?.boxesPerSheet || 1;
   const sheetsConsumed = Math.ceil(qty / boxesPerSheet);
@@ -584,6 +595,41 @@ export const createDispatchFromOrder = async (req: any, res: any) => {
       });
     }
 
+    // For printed orders, resolve and validate the finished printed-stock that
+    // the completed job work produced. We deduct this on dispatch (raw material
+    // was already deducted when the order was sent to job work).
+    let printedInventoryId: any = null;
+    if (isPrintedOrder) {
+      const jobWork = (order as any).jobWorkRef
+        ? await JobWork.findById((order as any).jobWorkRef)
+        : null;
+      const outputInventoryRef = (jobWork as any)?.outputInventoryRef;
+
+      if (!outputInventoryRef) {
+        return res.status(400).json({
+          success: false,
+          message: "Printed stock not found. Complete the job work before dispatching.",
+        });
+      }
+
+      const printedInventory = await Inventory.findById(outputInventoryRef);
+      if (!printedInventory) {
+        return res.status(400).json({
+          success: false,
+          message: "Printed stock inventory record not found.",
+        });
+      }
+
+      if (printedInventory.currentStock < dispatchQty) {
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient printed stock. Available: ${printedInventory.currentStock}, Requested: ${dispatchQty}`,
+        });
+      }
+
+      printedInventoryId = printedInventory._id;
+    }
+
     const dispatch = await Dispatch.create({
       dispatchNo: await nextDispatchNumber(),
       dispatchDate: dispatchDate || new Date().toISOString().slice(0, 10),
@@ -602,6 +648,21 @@ export const createDispatchFromOrder = async (req: any, res: any) => {
         },
       ],
     });
+
+    // Deduct the finished printed item from inventory and log the OUT movement.
+    if (printedInventoryId) {
+      await Inventory.findByIdAndUpdate(printedInventoryId, {
+        $inc: { currentStock: -dispatchQty },
+      });
+
+      await StockTransaction.create({
+        inventoryRef: printedInventoryId,
+        type: "OUT",
+        quantity: dispatchQty,
+        referenceNumber: dispatch.dispatchNo,
+        notes: `Order ${order.orderInfo?.orderNumber || ""} dispatched — ${dispatchQty} units of printed stock`,
+      });
+    }
 
     order.dispatchRef = dispatch._id as any;
     order.status = "Dispatched";
