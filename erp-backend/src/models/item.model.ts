@@ -4,6 +4,7 @@ const ItemSchema = new Schema({
   itemCode: { type: String, required: true, unique: true, trim: true },
   itemName: { type: String, required: true, trim: true },
   brand: { type: String, trim: true },
+  customer: { type: Schema.Types.ObjectId, ref: "Customer" },
   type: {
     type: String,
     required: true,
