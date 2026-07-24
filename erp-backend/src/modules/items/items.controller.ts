@@ -1,9 +1,15 @@
 import { Request, Response } from "express";
 import Item from "../../models/item.model";
 
-export const getAllItems = async (_req: Request, res: Response) => {
+export const getAllItems = async (req: Request, res: Response) => {
   try {
-    const items = await Item.find().sort({ createdAt: -1 });
+    const customerId = req.query.customerId as string | undefined;
+    const filter = customerId ? { customer: customerId } : {};
+    
+    const items = await Item.find(filter)
+      .populate("customer", "companyName contactPerson")
+      .sort({ createdAt: -1 });
+      
     res.status(200).json({ success: true, data: items });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
@@ -12,7 +18,7 @@ export const getAllItems = async (_req: Request, res: Response) => {
 
 export const createItem = async (req: Request, res: Response) => {
   try {
-    const { itemName, brand, type, category, itemSpecification, boxSpecification, unitOfMeasure } = req.body;
+    const { itemName, brand, customer, type, category, itemSpecification, boxSpecification, unitOfMeasure } = req.body;
 
     if (!itemName) {
       res.status(400).json({ success: false, message: "itemName is required" });
@@ -32,6 +38,7 @@ export const createItem = async (req: Request, res: Response) => {
       itemCode,
       itemName,
       brand,
+      customer,
       type,
       category,
       specifications: itemSpecification || {},
@@ -48,13 +55,14 @@ export const createItem = async (req: Request, res: Response) => {
 export const updateItem = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { itemName, brand, type, category, itemSpecification, boxSpecification, unitOfMeasure } = req.body;
+    const { itemName, brand, customer, type, category, itemSpecification, boxSpecification, unitOfMeasure } = req.body;
 
     const item = await Item.findByIdAndUpdate(
       id,
       {
         itemName,
         brand,
+        customer,
         type,
         category,
         specifications: itemSpecification || {},
