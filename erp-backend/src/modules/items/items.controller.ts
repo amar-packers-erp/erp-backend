@@ -63,7 +63,7 @@ export const updateItem = async (req: Request, res: Response) => {
       {
         itemName,
         brand,
-        customer,
+        customer: customer || null,
         type,
         category,
         specifications: itemSpecification || {},

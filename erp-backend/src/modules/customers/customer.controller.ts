@@ -28,7 +28,19 @@ export const createCustomer = async (req: any, res: any) => {
 
 export const getCustomers = async (req: any, res: any) => {
   try {
-    const customers = await Customer.find().sort({ companyName: 1 });
+    const customers = await Customer.aggregate([
+      {
+        $lookup: {
+          from: "items",
+          localField: "_id",
+          foreignField: "customer",
+          as: "linkedItems",
+        },
+      },
+      {
+        $sort: { companyName: 1 },
+      },
+    ]);
 
     res.status(200).json({
       success: true,
