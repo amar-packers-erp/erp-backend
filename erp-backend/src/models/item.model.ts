@@ -28,6 +28,35 @@ const ItemSchema = new Schema({
     sheetLength: { type: Number, default: 0 },
     sheetBreadth: { type: Number, default: 0 },
   },
+  orderConfigurations: {
+    // Duplex Cost
+    duplexLength: { type: Number, default: 0 },
+    duplexBreadth: { type: Number, default: 0 },
+    duplexGsm: { type: Number, default: 0 },
+    duplexRate: { type: Number, default: 0 },
+    // 2-Ply Cost
+    numberOf2Ply: { type: String, default: "0" },
+    twoPlyGsm: { type: Number, default: 0 },
+    twoPlyRate: { type: Number, default: 0 },
+    // Printing & Finishing
+    printed: { type: Boolean, default: false },
+    laminated: { type: Boolean, default: false },
+    PrintingSize: { type: Number, default: 0 },
+    PrintingCost: { type: Number, default: 0 },
+    PrintingSheets: { type: Number, default: 0 },
+    // Lamination
+    lamRollSize: { type: Number, default: 0 },
+    lamSheetLength: { type: Number, default: 0 },
+    lamType: { type: String, default: "BOPP" },
+    fevicolCostPerSheet: { type: Number, default: 0 },
+    lamCostPerSheet: { type: Number, default: 0 },
+    // Processing Rates
+    sheeterRate: { type: Number, default: 0 },
+    pastingRate: { type: Number, default: 0 },
+    dieRate: { type: Number, default: 0 },
+    stitchingRate: { type: Number, default: 0 },
+    strappingRate: { type: Number, default: 0 },
+  },
   unitOfMeasure: { type: String, required: true, trim: true },
   linkedReels: {
     kraft: {

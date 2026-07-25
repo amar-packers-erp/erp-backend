@@ -3,7 +3,7 @@ import Item from "../../models/item.model";
 
 export const getAllItems = async (req: Request, res: Response) => {
   try {
-    const customerId = req.query.customerId as string | undefined;
+    const customerId = (req.query.customerId || req.query.customer) as string | undefined;
     const filter = customerId ? { customer: customerId } : {};
     
     const items = await Item.find(filter)
@@ -18,7 +18,7 @@ export const getAllItems = async (req: Request, res: Response) => {
 
 export const createItem = async (req: Request, res: Response) => {
   try {
-    const { itemName, brand, customer, type, category, itemSpecification, boxSpecification, unitOfMeasure } = req.body;
+    const { itemName, brand, customer, type, category, itemSpecification, boxSpecification, unitOfMeasure, orderConfigurations } = req.body;
 
     if (!itemName) {
       res.status(400).json({ success: false, message: "itemName is required" });
@@ -43,6 +43,7 @@ export const createItem = async (req: Request, res: Response) => {
       category,
       specifications: itemSpecification || {},
       boxSpecification: boxSpecification || {},
+      orderConfigurations: orderConfigurations || {},
       unitOfMeasure,
     });
 
@@ -55,7 +56,7 @@ export const createItem = async (req: Request, res: Response) => {
 export const updateItem = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { itemName, brand, customer, type, category, itemSpecification, boxSpecification, unitOfMeasure } = req.body;
+    const { itemName, brand, customer, type, category, itemSpecification, boxSpecification, unitOfMeasure, orderConfigurations } = req.body;
 
     const item = await Item.findByIdAndUpdate(
       id,
@@ -67,6 +68,7 @@ export const updateItem = async (req: Request, res: Response) => {
         category,
         specifications: itemSpecification || {},
         boxSpecification: boxSpecification || {},
+        orderConfigurations: orderConfigurations || {},
         unitOfMeasure,
       },
       { new: true }
