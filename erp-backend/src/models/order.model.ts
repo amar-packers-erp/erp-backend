@@ -6,6 +6,18 @@ const OrderSchema = new Schema(
   // Order Information
   // ==========================
   orderInfo: {
+    customerRef: {
+      type: Schema.Types.ObjectId,
+      ref: "Customer",
+      default: null,
+    },
+
+    itemRef: {
+      type: Schema.Types.ObjectId,
+      ref: "Item",
+      default: null,
+    },
+
     orderNumber: {
       type: String,
       required: true,
@@ -182,6 +194,31 @@ const OrderSchema = new Schema(
     },
 
     PrintingCost: {
+      type: Number,
+      default: 0,
+    },
+
+    lamRollSize: {
+      type: Number,
+      default: 0,
+    },
+
+    lamSheetLength: {
+      type: Number,
+      default: 0,
+    },
+
+    lamType: {
+      type: String,
+      default: "BOPP",
+    },
+
+    fevicolCostPerSheet: {
+      type: Number,
+      default: 0,
+    },
+
+    lamCostPerSheet: {
       type: Number,
       default: 0,
     },

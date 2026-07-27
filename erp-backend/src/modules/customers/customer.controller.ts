@@ -1,4 +1,5 @@
 import Customer from "../../models/customer.model";
+import Item from "../../models/item.model";
 
 export const createCustomer = async (req: any, res: any) => {
   try {
@@ -28,7 +29,22 @@ export const createCustomer = async (req: any, res: any) => {
 
 export const getCustomers = async (req: any, res: any) => {
   try {
-    const customers = await Customer.find().sort({ companyName: 1 });
+    const customers = await Customer.aggregate([
+      {
+        $lookup: {
+          from: "items",
+          let: { customerId: "$_id" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$customer", "$$customerId"] } } },
+            { $match: { type: "FinishedGood", category: "Finished Boxes" } },
+            { $project: { itemName: 1, itemCode: 1, brand: 1 } },
+            { $sort: { itemName: 1 } },
+          ],
+          as: "linkedItems",
+        },
+      },
+      { $sort: { companyName: 1 } },
+    ]);
 
     res.status(200).json({
       success: true,
@@ -96,6 +112,15 @@ export const updateCustomer = async (req: any, res: any) => {
 
 export const deleteCustomer = async (req: any, res: any) => {
   try {
+    const linkedItemCount = await Item.countDocuments({ customer: req.params.id });
+    if (linkedItemCount > 0) {
+      res.status(409).json({
+        success: false,
+        message: `Cannot delete customer while ${linkedItemCount} item(s) are linked. Unlink or move those items first.`,
+      });
+      return;
+    }
+
     const customer = await Customer.findByIdAndDelete(req.params.id);
 
     if (!customer) {

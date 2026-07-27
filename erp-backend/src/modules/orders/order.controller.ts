@@ -28,6 +28,8 @@ function flattenOrder(o: any) {
   const qtyDelivered = o.quantityDelivered || 0;
   return {
     _id: o._id,
+    customerId: o.orderInfo?.customerRef || null,
+    itemId: o.orderInfo?.itemRef || null,
     orderNumber: o.orderInfo?.orderNumber || o.orderNumber || "—",
     customerName: o.orderInfo?.customerName || o.customerName || "—",
     itemBrand: o.orderInfo?.itemBrand || o.itemBrand || "",
@@ -43,8 +45,31 @@ function flattenOrder(o: any) {
     height: o.boxSpecification?.height || o.height || 0,
     sheetLength: o.boxSpecification?.sheetLength || o.sheetLength || 0,
     sheetBreadth: o.boxSpecification?.sheetBreadth || o.sheetBreadth || 0,
+    boxesPerSheet: o.boxSpecification?.boxesPerSheet || 1,
     printed: o.finishing?.printed || o.printed || false,
     laminated: o.finishing?.laminated || o.laminated || false,
+    duplexLength: o.duplexCost?.length || 0,
+    duplexBreadth: o.duplexCost?.breadth || 0,
+    duplexGsm: o.duplexCost?.gsm || 0,
+    duplexRate: o.duplexCost?.rate || 0,
+    numberOf2Ply: o.twoPlyCost?.numberOfPly || "0",
+    twoPlyGsm: o.twoPlyCost?.gsmEachPly || 0,
+    twoPlyRate: o.twoPlyCost?.ratePerRoll || 0,
+    PrintingSize: o.finishing?.PrintingSize || 0,
+    PrintingSheets: o.finishing?.PrintingSheets || 0,
+    PrintingCost: o.finishing?.PrintingCost || 0,
+    lamRollSize: o.finishing?.lamRollSize || 0,
+    lamSheetLength: o.finishing?.lamSheetLength || 0,
+    lamType: o.finishing?.lamType || "BOPP",
+    fevicolCostPerSheet: o.finishing?.fevicolCostPerSheet || 0,
+    lamCostPerSheet: o.finishing?.lamCostPerSheet || 0,
+    sheeterRate: o.processing?.sheeterRate || 0,
+    pastingRate: o.processing?.pastingRate || 0,
+    dieRate: o.processing?.dieRate || 0,
+    stitchingRate: o.processing?.stitchRate || 0,
+    strappingRate: o.processing?.strapRate || 0,
+    totalCost: o.summary?.totalOrderCost || 0,
+    perBoxCost: o.summary?.perBoxCost || 0,
     productionStage: o.productionStage || "Not Started",
     jobWorkRef: o.jobWorkRef || null,
     dispatchRef: o.dispatchRef || null,
@@ -203,6 +228,52 @@ function getOrderJobType(order: any) {
   return order.finishing?.laminated ? "Printed+Laminated" : "Printed";
 }
 
+function toNumber(value: unknown, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function firstValue<T>(primary: T | undefined | null, fallback: T) {
+  return primary === undefined || primary === null || primary === "" ? fallback : primary;
+}
+
+type BoxSpecSnapshot = {
+  boxType?: string;
+  boxesPerSheet?: number;
+  itemSerialNumber?: string;
+  dieSerialNumber?: string;
+  length?: number;
+  breadth?: number;
+  height?: number;
+  sheetLength?: number;
+  sheetBreadth?: number;
+};
+
+type OrderConfigSnapshot = {
+  duplexLength?: number;
+  duplexBreadth?: number;
+  duplexGsm?: number;
+  duplexRate?: number;
+  numberOf2Ply?: string;
+  twoPlyGsm?: number;
+  twoPlyRate?: number;
+  printed?: boolean;
+  laminated?: boolean;
+  PrintingSize?: number;
+  PrintingCost?: number;
+  PrintingSheets?: number;
+  lamRollSize?: number;
+  lamSheetLength?: number;
+  lamType?: string;
+  fevicolCostPerSheet?: number;
+  lamCostPerSheet?: number;
+  sheeterRate?: number;
+  pastingRate?: number;
+  dieRate?: number;
+  stitchingRate?: number;
+  strappingRate?: number;
+};
+
 export const createOrder = async (req: any, res: any) => {
   console.log("========== CREATE ORDER ==========");
   console.log("BODY:");
@@ -210,32 +281,130 @@ export const createOrder = async (req: any, res: any) => {
 
   try {
     const body = req.body;
+    const selectedItem = body.itemId ? await Item.findById(body.itemId).lean() : null;
+
+    if (body.itemId && !selectedItem) {
+      return res.status(400).json({
+        success: false,
+        message: "Selected item was not found",
+      });
+    }
+
+    if (selectedItem) {
+      const selectedCustomer = selectedItem.customer ? String(selectedItem.customer) : "";
+      if (body.customerId && selectedCustomer !== String(body.customerId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Selected item is not linked to this customer",
+        });
+      }
+
+      if (selectedItem.type !== "FinishedGood" || selectedItem.category !== "Finished Boxes") {
+        return res.status(400).json({
+          success: false,
+          message: "Only linked finished goods can be used for order creation",
+        });
+      }
+    }
+
+    const boxSpec = (selectedItem?.boxSpecification || {}) as BoxSpecSnapshot;
+    const config = (selectedItem?.orderConfigurations || {}) as OrderConfigSnapshot;
+    const quantityOrdered = toNumber(body.quantityOrdered);
+    const boxesPerSheet = toNumber(firstValue(boxSpec.boxesPerSheet, body.boxesPerSheet), 1) || 1;
+    const duplexLength = toNumber(firstValue(config.duplexLength, body.duplexLength));
+    const duplexBreadth = toNumber(firstValue(config.duplexBreadth, body.duplexBreadth));
+    const duplexGsm = toNumber(firstValue(config.duplexGsm, body.duplexGsm));
+    const duplexRate = toNumber(firstValue(config.duplexRate, body.duplexRate));
+    const numberOf2Ply = String(firstValue(config.numberOf2Ply, body.numberOf2Ply || "0"));
+    const twoPlyGsm = toNumber(firstValue(config.twoPlyGsm, body.twoPlyGsm));
+    const twoPlyRate = toNumber(firstValue(config.twoPlyRate, body.twoPlyRate));
+    const isPrinted = Boolean(firstValue(config.printed, body.printed || false));
+    const isLaminated = Boolean(firstValue(config.laminated, body.laminated || false));
+    const printingSheets = toNumber(firstValue(config.PrintingSheets, body.PrintingSheets));
+    const printingCost = toNumber(firstValue(config.PrintingCost, body.PrintingCost));
+    const printingTotalCost = isPrinted ? printingSheets * printingCost : 0;
+    const lamCostPerSheet = toNumber(firstValue(config.lamCostPerSheet, body.lamCostPerSheet));
+    const fevicolCostPerSheet = toNumber(firstValue(config.fevicolCostPerSheet, body.fevicolCostPerSheet));
+    const sheetsRequired = quantityOrdered / boxesPerSheet;
+    const duplexSheetWeight = ((duplexLength * duplexBreadth) / 1550) * (duplexGsm / 1000);
+    const duplexTotalCost = duplexSheetWeight * sheetsRequired * duplexRate;
+    const twoPlySheetWeight = ((duplexLength * duplexBreadth) / 1550) * (twoPlyGsm / 1000);
+    const twoPlyTotalCost = twoPlySheetWeight * sheetsRequired * toNumber(numberOf2Ply) * twoPlyRate;
+    const laminationTotalCost = isLaminated ? (lamCostPerSheet + fevicolCostPerSheet) * sheetsRequired : 0;
+    const sheeterCost = toNumber(firstValue(config.sheeterRate, body.sheeterRate)) * toNumber(numberOf2Ply);
+    const pastingCost = toNumber(firstValue(config.pastingRate, body.pastingRate)) * sheetsRequired;
+    const dieCost = toNumber(firstValue(config.dieRate, body.dieRate)) * sheetsRequired;
+    const stitchingCost = toNumber(firstValue(config.stitchingRate, body.stitchingRate)) * quantityOrdered;
+    const strappingCost = toNumber(firstValue(config.strappingRate, body.strappingRate)) * (quantityOrdered / 50);
+    const processingTotal = sheeterCost + pastingCost + dieCost + stitchingCost + strappingCost;
+    const totalOrderCost = duplexTotalCost + twoPlyTotalCost + printingTotalCost + laminationTotalCost + processingTotal;
 
     const orderDoc = {
   orderInfo: {
+    customerRef: body.customerId || selectedItem?.customer || null,
+    itemRef: selectedItem?._id || body.itemId || null,
     orderNumber: body.orderNumber,
     customerName: body.customerName,
-    itemBrand: body.itemBrand || "",
-    itemName: body.itemName,
-    quantityOrdered: Number(body.quantityOrdered) || 0,
+    itemBrand: selectedItem?.brand || body.itemBrand || "",
+    itemName: selectedItem?.itemName || body.itemName,
+    quantityOrdered,
   },
   boxSpecification: {
-    boxType: body.boxType || "",
-    boxesPerSheet: Number(body.boxesPerSheet) || 1,
-    itemSerialNumber: body.itemSerialNumber || "",
-    dieSerialNumber: body.dieSerialNumber || "",
-    length: Number(body.length) || 0,
-    breadth: Number(body.breadth) || 0,
-    height: Number(body.height) || 0,
-    sheetLength: Number(body.sheetLength) || 0,
-    sheetBreadth: Number(body.sheetBreadth) || 0,
+    boxType: firstValue(boxSpec.boxType, body.boxType || ""),
+    boxesPerSheet,
+    itemSerialNumber: firstValue(boxSpec.itemSerialNumber, body.itemSerialNumber || ""),
+    dieSerialNumber: firstValue(boxSpec.dieSerialNumber, body.dieSerialNumber || ""),
+    length: toNumber(firstValue(boxSpec.length, body.length)),
+    breadth: toNumber(firstValue(boxSpec.breadth, body.breadth)),
+    height: toNumber(firstValue(boxSpec.height, body.height)),
+    sheetLength: toNumber(firstValue(boxSpec.sheetLength, body.sheetLength)),
+    sheetBreadth: toNumber(firstValue(boxSpec.sheetBreadth, body.sheetBreadth)),
   },
-  finishing: {
-    printed: body.printed || false,
-    laminated: body.laminated || false,
+  duplexCost: {
+    length: duplexLength,
+    breadth: duplexBreadth,
+    gsm: duplexGsm,
+    rate: duplexRate,
+    area: duplexLength * duplexBreadth,
+    sheetWeight: duplexSheetWeight,
+    qtyRequiredSheets: sheetsRequired,
+    cost: duplexTotalCost,
   },
   twoPlyCost: {
-    numberOfPly: body.numberOf2Ply || "0",
+    numberOfPly: numberOf2Ply,
+    gsmEachPly: twoPlyGsm,
+    ratePerRoll: twoPlyRate,
+    totalCost: twoPlyTotalCost,
+  },
+  finishing: {
+    printed: isPrinted,
+    laminated: isLaminated,
+    PrintingSize: toNumber(firstValue(config.PrintingSize, body.PrintingSize)),
+    PrintingSheets: printingSheets,
+    PrintingCost: printingCost,
+    lamRollSize: toNumber(firstValue(config.lamRollSize, body.lamRollSize)),
+    lamSheetLength: toNumber(firstValue(config.lamSheetLength, body.lamSheetLength)),
+    lamType: firstValue(config.lamType, body.lamType || "BOPP"),
+    fevicolCostPerSheet,
+    lamCostPerSheet,
+    laminationCost: laminationTotalCost,
+  },
+  processing: {
+    sheeterRate: toNumber(firstValue(config.sheeterRate, body.sheeterRate)),
+    pastingRate: toNumber(firstValue(config.pastingRate, body.pastingRate)),
+    dieRate: toNumber(firstValue(config.dieRate, body.dieRate)),
+    stitchRate: toNumber(firstValue(config.stitchingRate, body.stitchingRate)),
+    strapRate: toNumber(firstValue(config.strappingRate, body.strappingRate)),
+    totalProcessingCost: processingTotal,
+  },
+  summary: {
+    duplexCost: duplexTotalCost,
+    twoPlyCost: twoPlyTotalCost,
+    PrintingCost: printingTotalCost,
+    laminationCost: laminationTotalCost,
+    processingCost: processingTotal,
+    perBoxCost: quantityOrdered > 0 ? totalOrderCost / quantityOrdered : 0,
+    totalOrderCost,
   },
   status: "Pending" as const,
 };

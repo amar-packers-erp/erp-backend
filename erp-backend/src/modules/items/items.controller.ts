@@ -1,18 +1,38 @@
 import { Request, Response } from "express";
 import Item from "../../models/item.model";
+import mongoose from "mongoose";
 
-export const getAllItems = async (_req: Request, res: Response) => {
+const buildCustomerFilter = (value: unknown) => {
+  if (!value || typeof value !== "string") return {};
+  if (!mongoose.Types.ObjectId.isValid(value)) {
+    throw new Error("Invalid customer id");
+  }
+  return { customer: value };
+};
+
+export const getAllItems = async (req: Request, res: Response) => {
   try {
-    const items = await Item.find().sort({ createdAt: -1 });
+    const customerId = req.query.customerId || req.query.customer;
+    const orderable = req.query.orderable === "true";
+    const filter: Record<string, unknown> = {
+      ...buildCustomerFilter(customerId),
+      ...(orderable ? { type: "FinishedGood", category: "Finished Boxes" } : {}),
+    };
+
+    const items = await Item.find(filter)
+      .populate("customer", "companyName contactPerson")
+      .sort({ createdAt: -1 });
+
     res.status(200).json({ success: true, data: items });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    const status = error.message === "Invalid customer id" ? 400 : 500;
+    res.status(status).json({ success: false, message: error.message });
   }
 };
 
 export const createItem = async (req: Request, res: Response) => {
   try {
-    const { itemName, brand, type, category, itemSpecification, boxSpecification, unitOfMeasure } = req.body;
+    const { itemName, brand, customer, type, category, itemSpecification, boxSpecification, orderConfigurations, unitOfMeasure } = req.body;
 
     if (!itemName) {
       res.status(400).json({ success: false, message: "itemName is required" });
@@ -32,10 +52,12 @@ export const createItem = async (req: Request, res: Response) => {
       itemCode,
       itemName,
       brand,
+      customer: customer || null,
       type,
       category,
       specifications: itemSpecification || {},
       boxSpecification: boxSpecification || {},
+      orderConfigurations: orderConfigurations || {},
       unitOfMeasure,
     });
 
@@ -48,19 +70,28 @@ export const createItem = async (req: Request, res: Response) => {
 export const updateItem = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { itemName, brand, type, category, itemSpecification, boxSpecification, unitOfMeasure } = req.body;
+    const { itemName, brand, customer, type, category, itemSpecification, boxSpecification, orderConfigurations, unitOfMeasure } = req.body;
+    const update: Record<string, unknown> = {
+      itemName,
+      brand,
+      type,
+      category,
+      specifications: itemSpecification || {},
+      boxSpecification: boxSpecification || {},
+      unitOfMeasure,
+    };
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "orderConfigurations")) {
+      update.orderConfigurations = orderConfigurations || {};
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "customer")) {
+      update.customer = customer || null;
+    }
 
     const item = await Item.findByIdAndUpdate(
       id,
-      {
-        itemName,
-        brand,
-        type,
-        category,
-        specifications: itemSpecification || {},
-        boxSpecification: boxSpecification || {},
-        unitOfMeasure,
-      },
+      update,
       { new: true }
     );
 
